@@ -1,0 +1,218 @@
+/*
+
+Crivellaro 2021
+
+*/
+
+
+#include <WiFi.h>
+#include <PubSubClient.h>
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+
+
+//Parametri WiFi
+const char* ssid = "SSID_WiFi";
+const char* password = "Password_WiFi";
+
+//Broker
+const char* mqtt_server = "10.0.2.43";
+
+//Nome di questo client, sarà visibile dal broker
+const char* clientName = "Esp";
+
+// Motor A
+int motor1Pin1 = 22; 
+int motor1Pin2 = 23; 
+int enable1Pin = 21; 
+ 
+
+// Configuro parametri PWM
+const int freq = 30000;
+const int pwmChannel = 0;
+const int resolution = 8;
+int dutyCycle = 200;
+
+
+long lastMsg = 0;
+String msgIn;
+int value = 0;
+void setup()
+{
+  pinMode(motor1Pin1, OUTPUT);
+  pinMode(motor1Pin2, OUTPUT);
+  pinMode(enable1Pin, OUTPUT);
+
+  // PWM funzioni
+  ledcSetup(pwmChannel, freq, resolution);
+  
+  // Collegare il canale al GPIO da controllare
+  ledcAttachPin(enable1Pin, pwmChannel);
+  
+  Serial.begin(115200);
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+void setup_wifi()
+{
+  delay(10);
+  Serial.println();
+  Serial.print("Connesso a : ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connesso");
+  Serial.println("IP : ");
+  Serial.println(WiFi.localIP());
+}
+void callback(char* topic, byte* payload, unsigned int length) {
+  msgIn = "";
+  Serial.print("Messaggio Arrivato [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    msgIn = msgIn + ((char)payload[i]);
+  }
+  Serial.println(msgIn);
+  ControlsByMessage((String)topic, msgIn);
+}
+void ControlsByMessage(String tpc, String msg)
+{
+    Serial.println(tpc);
+    Serial.println(msg);
+
+//Veloce
+
+if (tpc == "Avanti_Veloce")
+  {  
+    if (msg == "ON")
+    {
+      // Spostare il motore CC in avanti alla massima velocità
+      Serial.println("Avanti veloce");
+      digitalWrite(motor1Pin1, LOW);
+      digitalWrite(motor1Pin2, HIGH); 
+      delay(2000);
+    }
+    else if (msg == "OFF")
+    {
+      // Motore Fermo
+      Serial.println("Motore Fermo");
+      digitalWrite(motor1Pin1, LOW);
+      digitalWrite(motor1Pin2, LOW);
+      delay(1000);
+    }
+  }
+
+
+  if (tpc == "Indietro_Veloce")
+  {  
+    if (msg == "ON")
+    {
+      // Spostare il motore CC in avanti alla massima velocità
+      Serial.println("Indietro Veloce");
+      digitalWrite(motor1Pin1, HIGH);
+      digitalWrite(motor1Pin2, LOW); 
+      delay(2000);
+    }
+    else if (msg == "OFF")
+    {
+      // Motore Fermo
+      Serial.println("Motore Fermo");
+      digitalWrite(motor1Pin1, LOW);
+      digitalWrite(motor1Pin2, LOW);
+      delay(1000);
+    }
+  }
+
+//Veloce
+
+    
+//Graduale
+    
+  if (tpc == "Avanti_Graduale")
+  {  
+    if (msg == "ON")
+    {
+      // Spostare il motore CC in avanti con velocità crescente
+      digitalWrite(motor1Pin1, LOW);
+      digitalWrite(motor1Pin2, HIGH);
+      while (dutyCycle <= 255){
+      ledcWrite(pwmChannel, dutyCycle);   
+      Serial.print("Avanti con il ciclo di lavoro: ");
+      Serial.println(dutyCycle);
+      dutyCycle = dutyCycle + 5;
+      delay(500);
+  }
+  dutyCycle = 200; 
+    }
+    else if (msg == "OFF")
+    {
+      // Motore Fermo
+      Serial.println("Motore Fermo");
+      digitalWrite(motor1Pin1, LOW);
+      digitalWrite(motor1Pin2, LOW);
+      delay(1000);
+    }
+  }
+  if (tpc == "Indietro_Graduale")
+  {
+    if (msg == "ON")
+    {
+      // Sposta il motore CC all'indietro con aumento della velocità
+      digitalWrite(motor1Pin1, HIGH);
+      digitalWrite(motor1Pin2, LOW);
+      while (dutyCycle <= 255){
+      ledcWrite(pwmChannel, dutyCycle);   
+      Serial.print("Indietro con il ciclo di lavoro: ");
+      Serial.println(dutyCycle);
+      dutyCycle = dutyCycle + 5;
+      delay(500);
+  }
+  dutyCycle = 200;
+    }
+    else if (msg == "OFF")
+    {
+      // Motore Fermo
+  Serial.println("Motore Fermo");
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  delay(1000);
+    }
+  }  
+}
+
+//Graduale
+
+void reconnect() {
+  // Loop fino alla riconnessione
+  while (!client.connected()) {
+    Serial.print("Connessione MQTT...");
+    // tenta la connessione
+    if (client.connect(clientName)) {
+      Serial.println("Connesso");
+      // sottoscrizione ai Topic
+      client.subscribe("Avanti_Veloce");
+      client.subscribe("Indietro_Veloce");
+      client.subscribe("Avanti_Graduale");
+      client.subscribe("Indietro_Graduale");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" Riprovo.... 5");
+      // attendi 5 secondi tra i tentativi di riconnessione
+      delay(5000);
+    }
+  }
+}
+void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+}
